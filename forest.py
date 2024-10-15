@@ -25,6 +25,11 @@ class Forest:
         except pd.errors.ParserError:
             print("Error: The file could not be parsed.")
             return
+        
+        # Check for NaN values in the dataset after loading
+        if self.dataset.isnull().values.any():
+            print("Warning: NaN values detected in the dataset. Filling NaNs with 0.")
+            self.dataset.fillna(0, inplace=True)  # Handle NaN values before processing
 
         # Define features (X) and target (y)
         self.X = self.dataset[['Time_Spent', 
@@ -43,7 +48,7 @@ class Forest:
                         '2Prior_Room_0.0',
                         '2Prior_Room_1.0', 
                         '2Prior_Room_2.0',
-                        '2Prior_Room_3.0',  # Adjusted to match the format
+                        '2Prior_Room_3.0',  
                         '2Prior_Room_4.0',
                         '2Prior_Room_5.0',
                         '2Prior_Room_6.0',
@@ -62,7 +67,7 @@ class Forest:
                                 'Next_Room_Study']]
 
     def split_data(self, test_size=0.2):
-        """Split the dataset into training and testing sets and apply SMOTE."""
+        """Split the dataset into training and testing sets and apply SMOTE selectively."""
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=self.random_state)
 
         # Convert y_train to single-label if multi-label (for classification)
@@ -72,12 +77,27 @@ class Forest:
         if self.X_train.isnull().values.any() or np.isnan(self.y_train_labels).any():
             print("Warning: NaN values detected in the training data. Filling NaNs with 0.")
             self.X_train.fillna(0, inplace=True)
-            # You may also consider filling NaNs in the y_train_labels if applicable
-            # This is important if your target variable can have NaNs, otherwise just ensure X_train is clean.
-        
-        # Apply SMOTE to balance the classes in the training set
-        smote = SMOTE(random_state=self.random_state)
-        self.X_train_resampled, self.y_train_resampled = smote.fit_resample(self.X_train, self.y_train_labels)
+
+        # Create separate datasets for the underrepresented classes
+        underrepresented_classes = [1, 4]
+        X_resampled, y_resampled = self.X_train.copy(), self.y_train_labels.copy()
+
+        for class_label in underrepresented_classes:
+            # Get the indices for the current class
+            class_indices = np.where(y_resampled == class_label)[0]
+            X_class = self.X_train.iloc[class_indices]
+            y_class = y_resampled[class_indices]
+
+            # Apply SMOTE to the class
+            smote = SMOTE(random_state=self.random_state)
+            X_class_resampled, y_class_resampled = smote.fit_resample(X_class, y_class)
+
+            # Concatenate the resampled data back
+            X_resampled = pd.concat([X_resampled, pd.DataFrame(X_class_resampled)], ignore_index=True)
+            y_resampled = np.concatenate([y_resampled, y_class_resampled])
+
+        # Update the training set with the resampled data
+        self.X_train_resampled, self.y_train_resampled = X_resampled, y_resampled
 
         print(f"Original dataset shape: {self.y_train_labels.shape}")
         print(f"Resampled dataset shape: {self.y_train_resampled.shape}")
@@ -128,11 +148,11 @@ class Forest:
     def hyperparameter_tuning(self, param_distributions, n_iter=100, cv=3):
         """Perform Randomized Search Cross-Validation to find optimal hyperparameters."""
         random_search = RandomizedSearchCV(estimator=self.model,
-                                        param_distributions=param_distributions,
-                                        n_iter=n_iter,
-                                        cv=cv,
-                                        random_state=self.random_state,
-                                        n_jobs=1)  # Run in single-threaded mode
+                                           param_distributions=param_distributions,
+                                           n_iter=n_iter,
+                                           cv=cv,
+                                           random_state=self.random_state,
+                                           n_jobs=1)  # Run in single-threaded mode
 
         # Use SMOTE before fitting for hyperparameter tuning
         X_train_resampled, y_train_resampled = SMOTE(random_state=self.random_state).fit_resample(self.X_train, self.y_train_labels)
