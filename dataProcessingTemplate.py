@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from forest import Forest
 from DataMolder import DataMolder
+from imblearn.over_sampling import RandomOverSampler
 import joblib  # For saving/loading model results
 
 
@@ -21,13 +22,15 @@ import joblib  # For saving/loading model results
 
 # Initialize the Forest class
 forest = Forest(n_estimators=200)
+
+# Load data
 forest.load_data('updatedCleanedData.csv')
 
 # Perform K-Fold Cross-Validation
 mean_accuracy, std_accuracy = forest.k_fold_cv(n_splits=5)
 print(f"Mean Accuracy: {mean_accuracy:.2f}, Standard Deviation: {std_accuracy:.2f}")
 
-# Split the data and perform hyperparameter tuning
+# Split the data and handle class distribution and random over-sampling
 forest.split_data(test_size=0.2)
 
 # Define the parameter grid for hyperparameter tuning
@@ -46,7 +49,7 @@ print("Best Parameters:", best_params)
 print("Best Cross-Validation Score:", best_score)
 
 # Train the model and evaluate
-forest.train()
+forest.train()  # Ensure that random over-sampling has been applied in split_data
 y_pred = forest.predict()
 accuracy, report, cm = forest.evaluate(y_pred)
 
@@ -64,6 +67,3 @@ results = {
     'confusion_matrix': cm,
     'predictions': y_pred
 }
-
-# Save results to a file for later use
-#joblib.dump(results, 'model_results.pkl')
