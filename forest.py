@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from imblearn.over_sampling import RandomOverSampler
+from imblearn.over_sampling import SMOTE
 
 class Forest:
     def __init__(self, n_estimators=100, random_state=42, class_weight=None):
@@ -31,29 +32,39 @@ class Forest:
             print("Warning: NaN values detected in the dataset. Filling NaNs with 0.")
             self.dataset.fillna(0, inplace=True)  # Handle NaN values before processing
 
-        # Define features (X) and target (y)
+        # Define features (X) including interaction features
         self.X = self.dataset[['Time_Spent', 
-                        'Current_Room_Bedroom', 
-                        'Current_Room_Deck', 
-                        'Current_Room_Den', 
-                        'Current_Room_Front Door', 
-                        'Current_Room_Garage', 
-                        'Current_Room_Kitchen', 
-                        'Current_Room_Living Room', 
-                        'Current_Room_Stairway', 
-                        'Current_Room_Study', 
-                        'Previous Room Time', 
-                        'Time of Day', 
-                        'Day of Week',
-                        '2Prior_Room_0.0',
-                        '2Prior_Room_1.0', 
-                        '2Prior_Room_2.0',
-                        '2Prior_Room_3.0',  
-                        '2Prior_Room_4.0',
-                        '2Prior_Room_5.0',
-                        '2Prior_Room_6.0',
-                        '2Prior_Room_7.0',
-                        '2Prior_Room_8.0']]
+                'Current_Room_Bedroom', 
+                'Current_Room_Deck', 
+                'Current_Room_Den', 
+                'Current_Room_Front Door', 
+                'Current_Room_Garage', 
+                'Current_Room_Kitchen', 
+                'Current_Room_Living Room', 
+                'Current_Room_Stairway', 
+                'Current_Room_Study', 
+                'Previous Room Time', 
+                'Time of Day', 
+                'Day of Week',
+                '2Prior_Room_0.0',
+                '2Prior_Room_1.0', 
+                '2Prior_Room_2.0',
+                '2Prior_Room_3.0',  
+                '2Prior_Room_4.0',
+                '2Prior_Room_5.0',
+                '2Prior_Room_6.0',
+                '2Prior_Room_7.0',
+                '2Prior_Room_8.0',
+                # Add interaction features here
+                'Time_Spent_Current_Room_Bedroom',
+                'Time_Spent_Current_Room_Deck',
+                'Time_Spent_Current_Room_Den',
+                'Time_Spent_Current_Room_Front Door',
+                'Time_Spent_Current_Room_Garage',
+                'Time_Spent_Current_Room_Kitchen',
+                'Time_Spent_Current_Room_Living Room',
+                'Time_Spent_Current_Room_Stairway',
+                'Time_Spent_Current_Room_Study']]
 
         # Target variable (y)
         self.y = self.dataset[['Next_Room_Bedroom', 
@@ -69,9 +80,12 @@ class Forest:
     def split_data(self, test_size=0.2):
         """Split the dataset into training and testing sets and apply random over-sampling selectively."""
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=self.random_state)
-
         # Convert y_train to single-label if multi-label (for classification)
         self.y_train_labels = np.argmax(self.y_train.values, axis=1)
+
+        # Implement SMOTE for oversampling
+        smote = SMOTE(random_state=self.random_state)
+        self.X_train_resampled, self.y_train_labels_resampled = smote.fit_resample(self.X_train, self.y_train_labels)
 
         # Check for NaN values in the training features
         if self.X_train.isnull().values.any() or np.isnan(self.y_train_labels).any():
@@ -82,7 +96,7 @@ class Forest:
         class_counts = np.bincount(self.y_train_labels)
         print("Class distribution in the training set:", class_counts)
 
-        # Implement Random Over Sampling for underrepresented classes (2 and 4)
+        # Implement Random Over Sampling for underrepresented classes (if needed)
         underrepresented_classes = [2, 4]
         ros = RandomOverSampler(random_state=self.random_state)
 
@@ -92,16 +106,11 @@ class Forest:
             X_class = self.X_train.iloc[class_indices]
             y_class = self.y_train_labels[class_indices]
 
-            # Print information about the class being processed
             print(f"Applying Random Over Sampling for class {class_label}")
             print(f"Class {class_label} count before Over Sampling: {len(y_class)}")
 
-            # Check if there's more than one class in y_class
-            if len(np.unique(y_class)) > 1:
-                # Apply Random Over Sampling to the class
+            if len(np.unique(y_class)) > 1:  # Ensure there's more than 1 unique class
                 X_class_resampled, y_class_resampled = ros.fit_resample(X_class, y_class)
-
-                # Concatenate the resampled data back
                 self.X_train = pd.concat([self.X_train, pd.DataFrame(X_class_resampled)], ignore_index=True)
                 self.y_train_labels = np.concatenate([self.y_train_labels, y_class_resampled])
             else:
@@ -109,7 +118,6 @@ class Forest:
 
         print(f"Original dataset shape: {self.y_train_labels.shape}")
         print(f"Resampled dataset shape: {len(self.y_train_labels)}")
-
 
     def train(self):
         """Train the Random Forest model on the training data."""
@@ -165,6 +173,7 @@ class Forest:
         self.model = random_search.best_estimator_
 
         return random_search.best_params_, random_search.best_score_
+
 
 
 

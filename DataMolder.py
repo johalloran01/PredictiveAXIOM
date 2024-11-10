@@ -79,6 +79,12 @@ class DataMolder:
         # Handle missing values for Previous Room Time
         self.dataset['Previous Room Time'].fillna(0, inplace=True)
 
+        # Create interaction features
+        for room in current_room_encoded.columns:
+            # Create a new feature representing the interaction between Time_Spent and each room
+            interaction_feature = f'Time_Spent_{room}'
+            self.dataset[interaction_feature] = self.dataset['Time_Spent'] * self.dataset[room]
+
         # Drop 'First Seen', 'Last Seen', 'Device ID', and 'Location' columns if not needed
         self.dataset = self.dataset.drop(columns=['First Seen', 'Last Seen', 'Device ID', 'Location'])
 
