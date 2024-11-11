@@ -11,7 +11,9 @@ class MarchovModel:
         """Train the HMM model with the provided CSV data."""
         # Load the formatted data
         data = pd.read_csv(csv_filepath)
-        sequences = data['Location_Code'].values.reshape(-1, 1)  # Ensure correct shape
+        
+        # Combine Location_Code and Time of Day into a structured sequence array
+        sequences = data[['Location_Code', 'Time of Day']].values
 
         # Fit the model to the training sequences
         self.model.fit(sequences)
@@ -25,8 +27,6 @@ class MarchovModel:
 
     def predict(self, sequence):
         """Predict the next state given a sequence of observations."""
+        # Ensure the input sequence includes both Location_Code and Time of Day
         logprob, hidden_states = self.model.decode(sequence, algorithm="viterbi")
         return hidden_states
-
-
-
