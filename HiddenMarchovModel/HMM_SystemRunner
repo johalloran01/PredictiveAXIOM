@@ -6,21 +6,30 @@ from sklearn.metrics import classification_report
 
 def main():
     # Step 1: Format the data using HMM_DataMolder
-    data_molder = HMM_DataMolder(input_filepath='/HiddenMarchovModel/CSV_Data/original_data.csv', 
-                                 output_filepath='/HiddenMarchovModel/CSV_Data/formatted_data.csv')
+    data_molder = HMM_DataMolder(input_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv', 
+                                 output_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv')
     data, location_mapping = data_molder.load_and_prepare_data()
 
     # Step 2: Initialize and train the HMM model
     n_states = len(location_mapping)  # Number of unique locations
     model = MarchovModel(n_states=n_states)
-    model.train('/HiddenMarchovModel/CSV_Data/formatted_data.csv')
+    model.train('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv')
 
-    # Step 3: Deploy the model for predictions
-    sample_sequence = data['Location_Code'].values.reshape(-1, 1)
+     # Step 3: Prepare the sequence for predictions
+    sample_sequence = data[['Location_Code', 'Time of Day']].values.reshape(-1, 2)  # Ensure the shape matches training
+
+    # Verify the length of sample_sequence and actual_states before calling predict
+    print(f"Sample sequence length: {len(sample_sequence)}")
+
+    # Ensure actual_states corresponds to the length of sample_sequence
+    actual_states = sample_sequence[:, 0]  # If using Location_Code for actual states
+    print(f"Actual states length: {len(actual_states)}")
+
+    # Step 4: Run prediction and check
     predictions = model.predict(sample_sequence)
+    print(f"Predictions length: {len(predictions)}")
 
-    # Step 4: Evaluate model performance
-    actual_states = sample_sequence.flatten()
+    # Step 5: Evaluate model performance
     accuracy = np.mean(predictions == actual_states)
 
     # Calculate classification metrics
@@ -40,7 +49,7 @@ def main():
         if key.isdigit():  # Only print detailed metrics for individual classes
             print(f"Room {reverse_mapping[int(key)]}: {value}")
 
-    # Step 5: Save results to a CSV file
+    # Step 6: Save results to a CSV file
     results_df = pd.DataFrame({
         'Timestamp': data['First Seen'],  # Include original timestamps
         'Actual State': actual_states,
@@ -51,9 +60,9 @@ def main():
 
     # Add performance metrics to the CSV as a footer
     metrics_df = pd.DataFrame(report).transpose()
-    metrics_df.to_csv('/HiddenMarchovModel/CSV_Data/model_metrics.csv', index=True)
-    results_df.to_csv('/HiddenMarchovModel/CSV_Data/model_predictions.csv', index=False)
-    print("Results and metrics saved to /HiddenMarchovModel/CSV_Data/")
+    metrics_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_metrics.csv', index=True)
+    results_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_predictions.csv', index=False)
+    print("Results and metrics saved to /home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/")
 
 if __name__ == "__main__":
     main()

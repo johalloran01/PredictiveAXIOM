@@ -28,5 +28,16 @@ class MarchovModel:
     def predict(self, sequence):
         """Predict the next state given a sequence of observations."""
         # Ensure the input sequence includes both Location_Code and Time of Day
+        if sequence.ndim != 2 or sequence.shape[1] != 2:
+            raise ValueError("Input sequence must be a 2D array with two columns: Location_Code and Time of Day")
+        
+        # Log shape information for debugging
+        print(f"Input sequence shape: {sequence.shape}")
+        
+        # Perform prediction
         logprob, hidden_states = self.model.decode(sequence, algorithm="viterbi")
+        
+        # Log output shape for verification
+        print(f"Predicted hidden states shape: {hidden_states.shape}")
+        
         return hidden_states
