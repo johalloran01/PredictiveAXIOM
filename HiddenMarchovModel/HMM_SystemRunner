@@ -1,0 +1,59 @@
+from HMM_DataMolder import HMM_DataMolder
+from MarchovModel import MarchovModel
+import pandas as pd
+import numpy as np
+from sklearn.metrics import classification_report
+
+def main():
+    # Step 1: Format the data using HMM_DataMolder
+    data_molder = HMM_DataMolder(input_filepath='/HiddenMarchovModel/CSV_Data/original_data.csv', 
+                                 output_filepath='/HiddenMarchovModel/CSV_Data/formatted_data.csv')
+    data, location_mapping = data_molder.load_and_prepare_data()
+
+    # Step 2: Initialize and train the HMM model
+    n_states = len(location_mapping)  # Number of unique locations
+    model = MarchovModel(n_states=n_states)
+    model.train('/HiddenMarchovModel/CSV_Data/formatted_data.csv')
+
+    # Step 3: Deploy the model for predictions
+    sample_sequence = data['Location_Code'].values.reshape(-1, 1)
+    predictions = model.predict(sample_sequence)
+
+    # Step 4: Evaluate model performance
+    actual_states = sample_sequence.flatten()
+    accuracy = np.mean(predictions == actual_states)
+
+    # Calculate classification metrics
+    report = classification_report(actual_states, predictions, zero_division=0, output_dict=True)
+
+    # Map numerical codes back to room names
+    reverse_mapping = {idx: location for location, idx in location_mapping.items()}
+    data['Actual_Room'] = data['Location_Code'].map(reverse_mapping)
+    data['Predicted_Room'] = pd.Series(predictions).map(reverse_mapping)
+
+    # Print evaluation metrics
+    print("Predicted sequence of states:", predictions)
+    print("Actual sequence of states:", actual_states)
+    print(f"Model Accuracy: {accuracy:.2f}")
+    print("Classification Report:")
+    for key, value in report.items():
+        if key.isdigit():  # Only print detailed metrics for individual classes
+            print(f"Room {reverse_mapping[int(key)]}: {value}")
+
+    # Step 5: Save results to a CSV file
+    results_df = pd.DataFrame({
+        'Timestamp': data['First Seen'],  # Include original timestamps
+        'Actual State': actual_states,
+        'Predicted State': predictions,
+        'Actual Room': data['Actual_Room'],
+        'Predicted Room': data['Predicted_Room']
+    })
+
+    # Add performance metrics to the CSV as a footer
+    metrics_df = pd.DataFrame(report).transpose()
+    metrics_df.to_csv('/HiddenMarchovModel/CSV_Data/model_metrics.csv', index=True)
+    results_df.to_csv('/HiddenMarchovModel/CSV_Data/model_predictions.csv', index=False)
+    print("Results and metrics saved to /HiddenMarchovModel/CSV_Data/")
+
+if __name__ == "__main__":
+    main()
