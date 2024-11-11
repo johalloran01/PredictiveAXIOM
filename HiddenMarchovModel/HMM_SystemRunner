@@ -6,8 +6,10 @@ from sklearn.metrics import classification_report
 
 def main():
     # Step 1: Format the data using HMM_DataMolder
-    data_molder = HMM_DataMolder(input_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv', 
-                                 output_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv')
+    data_molder = HMM_DataMolder(
+        input_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv', 
+        output_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv'
+    )
     data, location_mapping = data_molder.load_and_prepare_data()
 
     # Step 2: Initialize and train the HMM model
@@ -15,22 +17,30 @@ def main():
     model = MarchovModel(n_states=n_states)
     model.train('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv')
 
-     # Step 3: Prepare the sequence for predictions
-    sample_sequence = data[['Location_Code', 'Time of Day']].values.reshape(-1, 2)  # Ensure the shape matches training
+    # Step 3: Prepare the sequence for predictions
+    sample_sequence = data[['Location_Code', 'Time of Day']].values  # Ensure the shape matches training
+    print(f"Sample sequence shape for predictions: {sample_sequence.shape}")
 
-    # Verify the length of sample_sequence and actual_states before calling predict
-    print(f"Sample sequence length: {len(sample_sequence)}")
+    # Step 4: Validate the content of the sample sequence before prediction
+    # Check for negative values or NaNs in the sample sequence
+    if np.any(sample_sequence < 0) or np.isnan(sample_sequence).any():
+        print("Error: Sample sequence contains invalid values (negative or NaNs).")
+        return  # Exit the function to avoid passing bad data to the model
+    else:
+        print("Sample sequence passed validation.")
 
-    # Ensure actual_states corresponds to the length of sample_sequence
-    actual_states = sample_sequence[:, 0]  # If using Location_Code for actual states
-    print(f"Actual states length: {len(actual_states)}")
+    # Step 5: Run prediction and check
+    try:
+        predictions = model.predict(sample_sequence)
+        print(f"Predictions length: {len(predictions)}")
+    except ValueError as e:
+        print(f"Prediction error: {e}")
+        return
 
-    # Step 4: Run prediction and check
-    predictions = model.predict(sample_sequence)
-    print(f"Predictions length: {len(predictions)}")
-
-    # Step 5: Evaluate model performance
+    # Step 6: Evaluate model performance
+    actual_states = sample_sequence[:, 0]  # Assuming the first column is the actual state
     accuracy = np.mean(predictions == actual_states)
+    print(f"Model Accuracy: {accuracy:.2f}")
 
     # Calculate classification metrics
     report = classification_report(actual_states, predictions, zero_division=0, output_dict=True)
@@ -49,7 +59,7 @@ def main():
         if key.isdigit():  # Only print detailed metrics for individual classes
             print(f"Room {reverse_mapping[int(key)]}: {value}")
 
-    # Step 6: Save results to a CSV file
+    # Step 7: Save results to a CSV file
     results_df = pd.DataFrame({
         'Timestamp': data['First Seen'],  # Include original timestamps
         'Actual State': actual_states,
@@ -66,3 +76,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
