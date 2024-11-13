@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.utils import resample
+from collections import defaultdict
 
 class HMM_DataMolder:
     def __init__(self, input_filepath, output_filepath, min_instance_threshold=3000):
@@ -15,7 +16,7 @@ class HMM_DataMolder:
         # Ensure that the data is sorted by timestamp
         data['First Seen'] = pd.to_datetime(data['First Seen'])
         data['Last Seen'] = pd.to_datetime(data['Last Seen'])  # Ensure 'Last Seen' is datetime
-        data = data.sort_values(by='First Seen')
+        data = data.sort_values(by=['Device ID', 'First Seen'])
 
         # Add 'Time of Day' column using a granular mapping
         data['Hour'] = data['First Seen'].dt.hour
@@ -28,34 +29,48 @@ class HMM_DataMolder:
         # Add 'Duration' column for time spent in a room
         data['Duration'] = (data['Last Seen'] - data['First Seen']).dt.total_seconds()
 
-        # Map locations to numerical states
+        # Create a location mapping with an explicit integer code for missing data
         location_mapping = {location: idx for idx, location in enumerate(data['Location'].unique())}
+        location_mapping['no_room_data'] = 36  # Explicitly assign 'no_room_data' as a unique integer
+
+        # Reverse mapping for decoding predictions back to room names, including no_room_data
+        reverse_location_mapping = {idx: location for location, idx in location_mapping.items()}
+
+        # Map locations to numerical states and fill missing previous rooms with 36
         data['Location_Code'] = data['Location'].map(location_mapping)
-
-        # Create columns for the previous 3 room transitions (sequence context)
         for i in range(1, 4):
-            data[f'Prev_Location_{i}'] = data['Location_Code'].shift(i)
-
-        # Drop rows with NaN values created by shifting
-        data = data.dropna(subset=['Prev_Location_1', 'Prev_Location_2', 'Prev_Location_3'])
-        data = data.astype({'Location_Code': int, 'Prev_Location_1': int, 'Prev_Location_2': int, 'Prev_Location_3': int})
+            data[f'Prev_Location_{i}'] = data['Location_Code'].shift(i).fillna(36).astype(int)
 
         # Balance the data by resampling
         balanced_data = self._balance_data(data, location_mapping)
 
+        # Split balanced data by Device ID and day
+        sequences, lengths = self._split_by_device_and_day(balanced_data)
+
         # Ensure the balanced data is sorted by 'First Seen' before saving
-        balanced_data = balanced_data.sort_values(by='First Seen')
+        balanced_data = balanced_data.sort_values(by=['Device ID', 'First Seen'])
 
         # Save the formatted data for later use
         balanced_data.to_csv(self.output_filepath, index=False)
         print("Balanced data formatted and saved.")
         
-        # Print a quick validation check for order
-        print("First 5 timestamps after processing:", balanced_data['First Seen'].head())
-        print("Last 5 timestamps after processing:", balanced_data['First Seen'].tail())
+        # Ensure all required outputs are returned
+        return data, location_mapping, reverse_location_mapping, sequences, lengths
+
+    def _split_by_device_and_day(self, data):
+        sequences = []
+        lengths = []
+
+        # Group by Device ID and then by day
+        grouped = data.groupby([data['Device ID'], data['First Seen'].dt.date])
         
-        return balanced_data, location_mapping
-    
+        for (device, day), group in grouped:
+            sequence = group[['Location_Code', 'Time of Day']].values
+            sequences.append(sequence)
+            lengths.append(len(sequence))
+
+        return sequences, lengths
+
     def _map_time_of_day(self, hour):
         """Map hour to a more granular time of day category."""
         if 6 <= hour < 9:

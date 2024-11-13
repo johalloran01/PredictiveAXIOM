@@ -10,26 +10,28 @@ def main():
         input_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv', 
         output_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv'
     )
-    data, location_mapping = data_molder.load_and_prepare_data()
-
-    # Step 2: Initialize and train the HMM model
-    n_states = len(location_mapping)  # Number of unique locations
+    # Retrieve data, mappings for room encoding
+    data, location_mapping, reverse_location_mapping, sequences, lengths = data_molder.load_and_prepare_data()
+    
+    # Step 2: Initialize and train the Categorical HMM model
+    n_states = len(location_mapping)  # Number of unique rooms
     model = MarchovModel(n_states=n_states)
-    model.train('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv')
 
-    # Step 3: Prepare the sequence for predictions
-    sample_sequence = data[['Location_Code', 'Time of Day']].values  # Ensure the shape matches training
+    # Combine features for training
+    data['Combined_Code'] = data['Location_Code'] * 10 + data['Time of Day']
+    sequences = data['Combined_Code'].values.reshape(-1, 1)
+    lengths = [len(sequences)]  # Using full sequence length for training
+
+    model.train(sequences, lengths)
+
+    # Step 3: Prepare the sample sequence for predictions (combine features similarly)
+    sample_sequence = data[['Location_Code', 'Time of Day']]
+    sample_sequence['Combined_Code'] = sample_sequence['Location_Code'] * 10 + sample_sequence['Time of Day']
+    sample_sequence = sample_sequence[['Combined_Code']].values.reshape(-1, 1)  # Reshape to 2D array
+
     print(f"Sample sequence shape for predictions: {sample_sequence.shape}")
 
-    # Step 4: Validate the content of the sample sequence before prediction
-    # Check for negative values or NaNs in the sample sequence
-    if np.any(sample_sequence < 0) or np.isnan(sample_sequence).any():
-        print("Error: Sample sequence contains invalid values (negative or NaNs).")
-        return  # Exit the function to avoid passing bad data to the model
-    else:
-        print("Sample sequence passed validation.")
-
-    # Step 5: Run prediction and check
+    # Step 4: Run prediction and handle potential errors
     try:
         predictions = model.predict(sample_sequence)
         print(f"Predictions length: {len(predictions)}")
@@ -37,18 +39,17 @@ def main():
         print(f"Prediction error: {e}")
         return
 
-    # Step 6: Evaluate model performance
-    actual_states = sample_sequence[:, 0]  # Assuming the first column is the actual state
+    # Step 5: Evaluate model performance
+    actual_states = data['Location_Code'].values
     accuracy = np.mean(predictions == actual_states)
     print(f"Model Accuracy: {accuracy:.2f}")
 
     # Calculate classification metrics
     report = classification_report(actual_states, predictions, zero_division=0, output_dict=True)
 
-    # Map numerical codes back to room names
-    reverse_mapping = {idx: location for location, idx in location_mapping.items()}
-    data['Actual_Room'] = data['Location_Code'].map(reverse_mapping)
-    data['Predicted_Room'] = pd.Series(predictions).map(reverse_mapping)
+    # Map numerical codes back to room names for easier interpretation
+    data['Actual_Room'] = data['Location_Code'].map(reverse_location_mapping)
+    data['Predicted_Room'] = pd.Series(predictions).map(reverse_location_mapping)
 
     # Print evaluation metrics
     print("Predicted sequence of states:", predictions)
@@ -57,18 +58,19 @@ def main():
     print("Classification Report:")
     for key, value in report.items():
         if key.isdigit():  # Only print detailed metrics for individual classes
-            print(f"Room {reverse_mapping[int(key)]}: {value}")
+            room_name = reverse_location_mapping.get(int(key), "Unknown Room")
+            print(f"Room {room_name}: {value}")
 
-    # Step 7: Save results to a CSV file
+    # Step 6: Save results to a CSV file
     results_df = pd.DataFrame({
-        'Timestamp': data['First Seen'],  # Include original timestamps
+        'Timestamp': data['First Seen'],  # Original timestamps
         'Actual State': actual_states,
         'Predicted State': predictions,
         'Actual Room': data['Actual_Room'],
         'Predicted Room': data['Predicted_Room']
     })
 
-    # Add performance metrics to the CSV as a footer
+    # Save the classification metrics
     metrics_df = pd.DataFrame(report).transpose()
     metrics_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_metrics.csv', index=True)
     results_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_predictions.csv', index=False)
@@ -76,4 +78,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
