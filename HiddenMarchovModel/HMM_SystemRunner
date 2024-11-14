@@ -1,80 +1,66 @@
-from HMM_DataMolder import HMM_DataMolder
-from MarchovModel import MarchovModel
-import pandas as pd
 import numpy as np
-from sklearn.metrics import classification_report
+from collections import Counter
+from ModelConfig import ModelConfig
+from DataLoader import DataLoader
+from TimeBinner import TimeBinner
+from RoomTransitionHMM import RoomTransitionHMM
+from PredictionEvaluator import PredictionEvaluator
+
+class RoomAnalysis:
+    def __init__(self):
+        self.room_counts = {}
+
+    def analyze_room_data(self, raw_data):
+
+        if 'Location' not in raw_data.columns:
+            raise ValueError("Expected column 'Location' not found in data.")
+
+         # Extract room codes from the 'Location' column directly
+        room_codes = raw_data['Location'].dropna()
+        
+        # Convert to list if necessary, and count occurrences
+        self.room_counts = Counter(room_codes) 
+
+    def print_summary(self):
+        print("\nRoom Code Analysis Summary")
+        print("--------------------------")
+        for room_code, count in self.room_counts.items():
+            print(f"Room Code: {room_code}, Count: {count}")
+        print("--------------------------")
+        print(f"Total distinct room codes: {len(self.room_counts)}\n")
 
 def main():
-    # Step 1: Format the data using HMM_DataMolder
-    data_molder = HMM_DataMolder(
-        input_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv', 
-        output_filepath='/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/formatted_data.csv'
-    )
-    # Retrieve data, mappings for room encoding
-    data, location_mapping, reverse_location_mapping, sequences, lengths = data_molder.load_and_prepare_data()
+    config = ModelConfig(num_states=5, bin_size=15, random_state=42, n_iter=100, test_size=0.2)
+    config.display_config()
+
+    data_loader = DataLoader()
+    file_path = "/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv"
+    raw_data = data_loader.load_data(file_path)
     
-    # Step 2: Initialize and train the Categorical HMM model
-    n_states = len(location_mapping)  # Number of unique rooms
-    model = MarchovModel(n_states=n_states)
+    room_analysis = RoomAnalysis()
+    room_analysis.analyze_room_data(raw_data)
+    room_analysis.print_summary()
 
-    # Combine features for training
-    data['Combined_Code'] = data['Location_Code'] * 10 + data['Time of Day']
-    sequences = data['Combined_Code'].values.reshape(-1, 1)
-    lengths = [len(sequences)]  # Using full sequence length for training
+    time_binner = TimeBinner(bin_size=config.bin_size)
+    processed_data, sequence_lengths = data_loader.format_data(time_binner, bin_size=config.bin_size)
 
-    model.train(sequences, lengths)
+    train_data, test_data, train_lengths, test_lengths = data_loader.split_train_test(test_size=config.test_size, random_state=config.random_state)
 
-    # Step 3: Prepare the sample sequence for predictions (combine features similarly)
-    sample_sequence = data[['Location_Code', 'Time of Day']]
-    sample_sequence['Combined_Code'] = sample_sequence['Location_Code'] * 10 + sample_sequence['Time of Day']
-    sample_sequence = sample_sequence[['Combined_Code']].values.reshape(-1, 1)  # Reshape to 2D array
+    hmm_model = RoomTransitionHMM(n_states=config.num_states, random_state=config.random_state, n_iter=config.n_iter)
+    hmm_model.train(train_data, train_lengths)
 
-    print(f"Sample sequence shape for predictions: {sample_sequence.shape}")
+    predictions = []
+    actual = []
+    for sequence in test_data:
+        predicted_states = hmm_model.predict(np.array(sequence).reshape(-1, 1))
+        predictions.extend(predicted_states)
+        actual.extend(sequence.flatten())
 
-    # Step 4: Run prediction and handle potential errors
-    try:
-        predictions = model.predict(sample_sequence)
-        print(f"Predictions length: {len(predictions)}")
-    except ValueError as e:
-        print(f"Prediction error: {e}")
-        return
-
-    # Step 5: Evaluate model performance
-    actual_states = data['Location_Code'].values
-    accuracy = np.mean(predictions == actual_states)
-    print(f"Model Accuracy: {accuracy:.2f}")
-
-    # Calculate classification metrics
-    report = classification_report(actual_states, predictions, zero_division=0, output_dict=True)
-
-    # Map numerical codes back to room names for easier interpretation
-    data['Actual_Room'] = data['Location_Code'].map(reverse_location_mapping)
-    data['Predicted_Room'] = pd.Series(predictions).map(reverse_location_mapping)
-
-    # Print evaluation metrics
-    print("Predicted sequence of states:", predictions)
-    print("Actual sequence of states:", actual_states)
-    print(f"Model Accuracy: {accuracy:.2f}")
-    print("Classification Report:")
-    for key, value in report.items():
-        if key.isdigit():  # Only print detailed metrics for individual classes
-            room_name = reverse_location_mapping.get(int(key), "Unknown Room")
-            print(f"Room {room_name}: {value}")
-
-    # Step 6: Save results to a CSV file
-    results_df = pd.DataFrame({
-        'Timestamp': data['First Seen'],  # Original timestamps
-        'Actual State': actual_states,
-        'Predicted State': predictions,
-        'Actual Room': data['Actual_Room'],
-        'Predicted Room': data['Predicted_Room']
-    })
-
-    # Save the classification metrics
-    metrics_df = pd.DataFrame(report).transpose()
-    metrics_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_metrics.csv', index=True)
-    results_df.to_csv('/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/model_predictions.csv', index=False)
-    print("Results and metrics saved to /home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/")
+    evaluator = PredictionEvaluator()
+    # Updated to print only summaries
+    evaluator.evaluate_accuracy(predictions, actual, verbose=False)
+    evaluator.evaluate_confusion_matrix(predictions, actual, verbose=False)
+    evaluator.evaluate_classification_report(predictions, actual, verbose=False)
 
 if __name__ == "__main__":
     main()
