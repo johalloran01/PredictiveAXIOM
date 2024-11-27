@@ -5,21 +5,21 @@ from DataLoader import DataLoader
 from TimeBinner import TimeBinner
 from RoomTransitionHMM import RoomTransitionHMM
 from PredictionEvaluator import PredictionEvaluator
+from TransitionMatrix import TransitionMatrix  # Import the TransitionMatrix class
 
 class RoomAnalysis:
     def __init__(self):
         self.room_counts = {}
 
     def analyze_room_data(self, raw_data):
-
         if 'Location' not in raw_data.columns:
             raise ValueError("Expected column 'Location' not found in data.")
 
-         # Extract room codes from the 'Location' column directly
+        # Extract room codes from the 'Location' column directly
         room_codes = raw_data['Location'].dropna()
         
         # Convert to list if necessary, and count occurrences
-        self.room_counts = Counter(room_codes) 
+        self.room_counts = Counter(room_codes)
 
     def print_summary(self):
         print("\nRoom Code Analysis Summary")
@@ -30,37 +30,77 @@ class RoomAnalysis:
         print(f"Total distinct room codes: {len(self.room_counts)}\n")
 
 def main():
+    # Step 1: Load configuration
     config = ModelConfig(num_states=5, bin_size=15, random_state=42, n_iter=100, test_size=0.2)
     config.display_config()
 
+    # Step 2: Load raw data
     data_loader = DataLoader()
     file_path = "/home/josh/PredictiveAXIOM/HiddenMarchovModel/CSV_Data/original_data.csv"
     raw_data = data_loader.load_data(file_path)
-    
+
+    # Step 3: Analyze room data
     room_analysis = RoomAnalysis()
     room_analysis.analyze_room_data(raw_data)
     room_analysis.print_summary()
 
+    # Step 4: Initialize TransitionMatrix and calculate transitions
+    transition_matrix = TransitionMatrix()
+    transition_matrix.calculate_transitions(raw_data)
+    print("Transition matrix calculated:")
+    transition_matrix.display_matrix()
+
+    # Step 5: Format data with TimeBinner
     time_binner = TimeBinner(bin_size=config.bin_size)
-    processed_data, sequence_lengths = data_loader.format_data(time_binner, bin_size=config.bin_size)
+    processed_data, sequence_lengths = data_loader.format_data(time_binner, transition_matrix, bin_size=config.bin_size)    
+    print("Binned data and sequence lengths processed.")
+    print(f"Sample binned data: {processed_data[:5]}")
+    print(f"Sample sequence lengths: {sequence_lengths[:5]}")
 
-    train_data, test_data, train_lengths, test_lengths = data_loader.split_train_test(test_size=config.test_size, random_state=config.random_state)
+    # Step 6: Split data into training and test sets
+    train_data, test_data, train_lengths, test_lengths = data_loader.split_train_test(
+        test_size=config.test_size,
+        random_state=config.random_state
+    )
+    print("Train-test split complete.")
+    print(f"Test data size: {len(test_data)}")
+    if len(test_data) == 0:
+        raise ValueError("Test data is empty. Check your data splitting or preprocessing pipeline.")
 
+    # Step 7: Train HMM model
     hmm_model = RoomTransitionHMM(n_states=config.num_states, random_state=config.random_state, n_iter=config.n_iter)
     hmm_model.train(train_data, train_lengths)
+    print("HMM model training complete.")
 
+    # Step 8: Make predictions and evaluate
     predictions = []
     actual = []
-    for sequence in test_data:
-        predicted_states = hmm_model.predict(np.array(sequence).reshape(-1, 1))
+
+    for i, sequence in enumerate(test_data):
+        if sequence is None or len(sequence) == 0:
+            print(f"Skipping empty sequence at index {i}.")
+            continue
+
+        # Ensure sequence is 2D
+        if sequence.ndim == 1:
+            sequence = sequence.reshape(-1, 1)
+
+        print(f"Sequence shape before prediction: {sequence.shape}")
+        predicted_states = hmm_model.predict(np.array(sequence))
         predictions.extend(predicted_states)
-        actual.extend(sequence.flatten())
+
+        # Collect actual sequence for evaluation
+        actual.extend(sequence[:, 0].astype(int))
+
+    print("Predictions and actual states collected.")
+    print(f"Predicted states (sample): {predictions[:10]}")
+    print(f"Actual states (sample): {actual[:10]}")
 
     evaluator = PredictionEvaluator()
-    # Updated to print only summaries
-    evaluator.evaluate_accuracy(predictions, actual, verbose=False)
-    evaluator.evaluate_confusion_matrix(predictions, actual, verbose=False)
-    evaluator.evaluate_classification_report(predictions, actual, verbose=False)
+    evaluator.evaluate_accuracy(predictions, actual, verbose=True)
+    evaluator.evaluate_confusion_matrix(predictions, actual, verbose=True)
+    evaluator.evaluate_classification_report(predictions, actual, verbose=True)
+
 
 if __name__ == "__main__":
     main()

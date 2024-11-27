@@ -18,12 +18,11 @@ class DataLoader:
             print(f"Error loading data: {e}")
         return self.data
 
-    def format_data(self, time_binner, bin_size=15):
+    def format_data(self, time_binner, transition_matrix, bin_size=15):
         """
         Clean and structure data for the HMM.
         Uses TimeBinner to bin timestamps and create emissions.
         """
-        # Check if data is loaded
         if self.data is None:
             raise ValueError("No data loaded. Please load data first.")
 
@@ -32,26 +31,36 @@ class DataLoader:
         if not required_columns.issubset(self.data.columns):
             raise ValueError(f"Data is missing required columns: {required_columns}")
 
-        # Ensure room codes mapping is applied correctly
-        room_codes = {'Study': 1, 'Stairway': 2, 'Living Room': 3, 'Kitchen': 4, 'Den': 5, 'Bedroom': 6, 'Deck': 7, 'Garage': 8, 'Front Door': 9}
+        # Map room names to numerical codes
+        room_codes = {
+            'Study': 1, 'Stairway': 2, 'Living Room': 3, 'Kitchen': 4,
+            'Den': 5, 'Bedroom': 6, 'Deck': 7, 'Garage': 8, 'Front Door': 9
+        }
         self.data['Location'] = self.data['Location'].map(room_codes)
-        
-        # After mapping, check for unmapped (NaN) values due to any mismatches
-        unmapped = self.data['Location'].isna().sum()
-        if unmapped > 0:
-            print(f"Warning: {unmapped} entries could not be mapped to room codes. Check room names.")
 
-        # Apply time binning to create processed sequences
-        time_binner = TimeBinner(bin_size=bin_size)
-        self.processed_data, self.sequence_lengths = time_binner.apply_binning(self.data)  # Store sequence_lengths here
-        
-        print("Data successfully formatted for model.")
+        # Validate the completeness of the mapping
+        unmapped_rooms = self.data[self.data['Location'].isna()]['Location'].unique()
+        if unmapped_rooms.size > 0:
+            print(f"Warning: {unmapped_rooms.size} room names could not be mapped:")
+            print(f"Unmapped room names: {unmapped_rooms}")
+
+        # Apply time binning with transition matrix
+        print("Formatting data...")
+        print(f"Data sample before formatting:\n{self.data.head()}")
+        self.processed_data, self.sequence_lengths = time_binner.apply_binning(self.data, transition_matrix)
+        print("Data successfully formatted.")
+        print(f"Processed data sample:\n{self.processed_data[:5]}")
+        print(f"Sequence lengths: {self.sequence_lengths[:5]}")
+
+        # Validate sequence lengths
+        if any(length <= 0 for length in self.sequence_lengths):
+            raise ValueError("Sequence lengths contain non-positive values. Check the binning logic.")
+
         return self.processed_data, self.sequence_lengths
 
     def split_train_test(self, test_size=0.2, random_state=42):
         """
-        Split processed data and sequence lengths into training and test sets.
-        Assumes `processed_data` and `sequence_lengths` have been created.
+        Efficiently split processed data and sequence lengths into training and test sets.
         """
         if self.processed_data is None or self.sequence_lengths is None:
             raise ValueError("Data has not been formatted. Please format data first.")
@@ -61,13 +70,14 @@ class DataLoader:
         indices = np.arange(num_sequences)
         train_idx, test_idx = train_test_split(indices, test_size=test_size, random_state=random_state)
 
-        # Split processed_data based on sequence_lengths
-        train_data = []
-        test_data = []
+        # Use indices to slice processed_data and sequence_lengths
         train_lengths = [self.sequence_lengths[i] for i in train_idx]
         test_lengths = [self.sequence_lengths[i] for i in test_idx]
 
-        # Track the start position in self.processed_data
+        # Efficiently construct train and test data
+        train_data = []
+        test_data = []
+
         current_position = 0
         for i, length in enumerate(self.sequence_lengths):
             if i in train_idx:
@@ -77,6 +87,8 @@ class DataLoader:
             current_position += length
 
         print("Data successfully split into training and test sets.")
-        
-        # Convert lists to numpy arrays
+        print(f"Train data size: {len(train_data)}, Train lengths: {len(train_lengths)}")
+        print(f"Test data size: {len(test_data)}, Test lengths: {len(test_lengths)}")
+
+        # Convert to numpy arrays
         return np.array(train_data), np.array(test_data), train_lengths, test_lengths

@@ -24,10 +24,15 @@ class PredictionEvaluator:
 
     def evaluate_classification_report(self, predictions, actual, verbose=True):
         """Generate a classification report showing precision, recall, and F1-score."""
-        report = classification_report(actual, predictions, output_dict=True)
+        report = classification_report(
+            actual,
+            predictions,
+            output_dict=True,
+            zero_division=0  # Avoid warnings for undefined precision/recall
+        )
         self.metrics['classification_report'] = report
         if verbose:
-            print("Classification Report:\n", classification_report(actual, predictions))
+            print("Classification Report:\n", classification_report(actual, predictions, zero_division=0))
         return report
 
     def compare_models(self, model_predictions, verbose=True):
