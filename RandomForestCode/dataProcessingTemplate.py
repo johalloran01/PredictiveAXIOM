@@ -77,7 +77,7 @@ import joblib  # For saving/loading model results
 forest = Forest_LGB(n_estimators=200)
 
 # Load data
-forest.load_data('/TestData/updatedCleanedData.csv')
+forest.load_data('/home/josh/PredictiveAXIOM/TestData/updatedCleanedData.csv')
 
 # Perform K-Fold Cross-Validation
 mean_accuracy, std_accuracy = forest.k_fold_cv(n_splits=5)
