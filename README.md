@@ -79,10 +79,10 @@ Repository Structure
         lgbm_classifier.py: Implements the LGBMClassifier model.
         forest_lgb.py: Contains the Forest_LGB class, the core implementation for the LGBM model.
 
-Usage
+## Usage
 
-    Ensure all data files are located in the expected directories.
-    Run the DataMolder script to prepare datasets:
+Ensure all data files are located in the expected directories.
+Run the DataMolder script to prepare datasets:
 
 python DataMolder.py
 
@@ -94,7 +94,7 @@ python linear_svc.py
 
 For LGBMClassifier:
 
-python lgbm_classifi
+python lgbm_classifier.py
 
 Use Cases
 
